@@ -24,5 +24,10 @@ The Apache-compatible Python Web Server checks that the response starts with a c
 ```
 junk : more junk\n\n
 ```
+
+## Implementation
+Creating an instance of Python's basic `HTTPServer` requires passing the constructor an `HTTPRequestHandler`.  Python supplies a suitable handler, `CGIHTTPRequestHandler` (in module \Python27\lib\CGIHTTPServer.py).  When a client's request specifies a Python script to be executed, this handler's `run_cgi` method invokes the script and sends the output of that script to the client.  The Apache-compatible PWS needs an opportunity to inspect the output before it is sent to the client.  So this implementation derives a new class, `CGIHTTPRequestHandler_ApacheCompatible`, from the standard `CGIHTTPRequestHandler`, overriding the `run_cgi` method with one that implements the appropriate checks.
+
+The implementation requires a simplification of the standard `CGIHTTPRequestHandler`:  the standard version uses Python's `subprocess` module on Windows systems, but forks a child process on \*nix system.  The fork affords no chance for the handler to inspect the output from the script (as I understand it).  So the implementation of `CGIHTTPRequestHandler_ApacheCompatible` uses the `subprocess` module on \*nix systems, just as it does for Windows.  (As of 2013-07-26, I have yet to test whether this actually *works* on a Mac.  Stay tuned.)
     
 
