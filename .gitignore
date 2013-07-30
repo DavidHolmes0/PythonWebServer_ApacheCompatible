@@ -1,2 +1,4 @@
-# Mac OS X proprietry-format file recording custom attributes of a folder
+# Mac OS X proprietary-format file recording custom attributes of a folder
 .DS_Store
+
+*.pyc
