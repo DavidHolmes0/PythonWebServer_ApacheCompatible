@@ -264,8 +264,14 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         If any exception is raised, the caller should assume that
         self.path was rejected as invalid and act accordingly.
         '''
+        # Find the extension part of the resource (file) that is requested
+        # by the url.
+        import urlparse
+        pathFromUrl = urlparse.urlsplit(self.path, 'http').path
+        ext = os.path.splitext( pathFromUrl)[1].lower()
 
-        if os.path.splitext( self.path)[1].lower() == '.py':
+        # all and only Python files are considered CGIable
+        if ext == '.py':
             self.cgi_info = self._url_collapse_path_split(self.path)
             return True
         else: return False
