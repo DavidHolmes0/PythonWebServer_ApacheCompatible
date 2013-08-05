@@ -276,66 +276,14 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         # sets self.path to the path alone, like /cgi-bin/test_get.py
         # (without using the standard urlparse).  But this routine is being
         # called before parse_request, so sadly the processing is
-        # duplicated here.        
+        # duplicated here.  Who decided self.path should have different
+        # meanings at different times?
         import urlparse
         pathFromUrl = urlparse.urlsplit(self.path, 'http').path
 
         if self.is_python( pathFromUrl):
-            self.cgi_info = self._url_collapse_path_split(self.path)
+            # duplicate the processing done in the base class
+            self.cgi_info = CGIHTTPServer._url_collapse_path_split(self.path)
+            
             return True
         else: return False
-        
-    @staticmethod
-    def _url_collapse_path_split(path):
-        '''Mimic CGIHTTPServer._url_collapse_path_split, normalizing a URL.
-
-        This setup is unfortunate.  As of 2.7.3, the module defining
-        the base class CGIHTTPServer.CGIHTTPRequestHandler also
-        defines a (non-class) function, _url_collapse_path_split.  The
-        base class calls this function in its is_cgi() method, to set
-        its cgi_info attribute.  To achieve the same result, I have
-        copied the code for _url_collapse_path_split here.  Aiming to
-        reduce namespace pollution, I've made it a (private) method.
-
-        Worse, this functionality seems like a roll-your-own version that
-        could be standardized by using os.path.normpath.
-
-        Here is the docstring from 2.7.3's CGIHTTPServer.py, between
-        lines of hyphens:
-        -----------------------------------------------------------------
-        Given a URL path, remove extra '/'s and '.' path elements and
-        collapse any '..' references.
-
-        Implements something akin to RFC-2396 5.2 step 6 to parse relative paths.
-
-        Returns: A tuple of (head, tail) where tail is everything after the final /
-        and head is everything before it.  Head will always start with a '/' and,
-        if it contains anything else, never have a trailing '/'.
-
-        Raises: IndexError if too many '..' occur within the path.
-        -----------------------------------------------------------------
-        '''
-        # Similar to os.path.split(os.path.normpath(path)) but specific to URL
-        # path semantics rather than local operating system semantics.
-        path_parts = []
-        for part in path.split('/'):
-            if part == '.':
-                path_parts.append('')
-            else:
-                path_parts.append(part)
-        # Filter out blank non trailing parts before consuming the '..'.
-        path_parts = [part for part in path_parts[:-1] if part] + path_parts[-1:]
-        if path_parts:
-            tail_part = path_parts.pop()
-        else:
-            tail_part = ''
-        head_parts = []
-        for part in path_parts:
-            if part == '..':
-                head_parts.pop()
-            else:
-                head_parts.append(part)
-        if tail_part and tail_part == '..':
-            head_parts.pop()
-            tail_part = ''
-        return ('/' + '/'.join(head_parts), tail_part)
