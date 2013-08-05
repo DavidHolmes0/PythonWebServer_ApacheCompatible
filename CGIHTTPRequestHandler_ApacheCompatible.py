@@ -192,7 +192,7 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
 
         # Check that stdout matches Apache's requirements
         whine = self._apacheObjection( stdout, scriptfile)
-        if whine:   # content-type is missing; send client an error
+        if whine:
             self.send_error(500, whine)  #  Why 500:  when the script's 
               # result lacks a content-type header, Apache returns
               # error 500 "Internal Server Error".  That message seems
@@ -256,7 +256,12 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
 
 
     def is_cgi(self):
-        '''Returns whether self.path is a Python CGI script, overriding base class method.
+        '''Returns whether self.path is a CGI script, overriding base class method.
+
+        All and only Python files are considered CGI scripts.  It would
+        be ideal to mimic Apache's logic, but in Apache a configuration
+        option, "AddHandler cgi-script", determines which extensions
+        indicate cgi scripts.
 
         Updates the cgi_info attribute to the tuple
         (dir, rest).
@@ -264,14 +269,10 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         If any exception is raised, the caller should assume that
         self.path was rejected as invalid and act accordingly.
         '''
-        # Find the extension part of the resource (file) that is requested
-        # by the url.
         import urlparse
         pathFromUrl = urlparse.urlsplit(self.path, 'http').path
-        ext = os.path.splitext( pathFromUrl)[1].lower()
 
-        # all and only Python files are considered CGIable
-        if ext == '.py':
+        if self.is_python( pathFromUrl):
             self.cgi_info = self._url_collapse_path_split(self.path)
             return True
         else: return False

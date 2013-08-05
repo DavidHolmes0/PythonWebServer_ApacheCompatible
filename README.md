@@ -42,7 +42,7 @@ future
 
 + Merge checking for content-type into [Mike's already-started project] (https://github.com/zamansky/stuythonserver).
 
-+ Make PWS execute Python scripts from arbitrary directories.  Apache allows students to put their scripts and data files in any directory under their public_html.  Data files without explicit paths are sought in the script's directory.  PWS, by contrast, currently requires that all scripts reside in cgi-bin, and the default location for data files is in the directory that holds PythonWebServer.py.  I *think* the use of a single directory for executable scripts is a relic of security on centrally-managed web servers; it seems inconsistent with the model used at Stuy.
++ Make PWS execute Python scripts from arbitrary directories.  Apache allows students to put their scripts and data files in any directory under their public_html.  Data files without explicit paths are sought in the script's directory.  PWS, by contrast, currently requires that all scripts reside in cgi-bin, and the default location for data files is in the directory that holds PythonWebServer.py.  The use of a single directory for executable scripts is a relic of security on centrally-managed web servers (see, for example, [Apache's setup] (http://httpd.apache.org/docs/current/howto/cgi.html#nonscriptalias)); it seems inconsistent with the model used at Stuy.
 
 done
 ----
