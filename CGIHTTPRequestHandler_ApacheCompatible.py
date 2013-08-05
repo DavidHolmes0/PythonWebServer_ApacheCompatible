@@ -269,6 +269,14 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         If any exception is raised, the caller should assume that
         self.path was rejected as invalid and act accordingly.
         '''
+
+        # When this method is called, self.path can contain a query, like
+        #   /cgi-bin/test_get.py?first_text=first&The-Button=Submit
+        # even though BaseHTTPServer.BaseHTTPRequestHandler.parse_request()
+        # sets self.path to the path alone, like /cgi-bin/test_get.py
+        # (without using the standard urlparse).  But this routine is being
+        # called before parse_request, so sadly the processing is
+        # duplicated here.        
         import urlparse
         pathFromUrl = urlparse.urlsplit(self.path, 'http').path
 
