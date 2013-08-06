@@ -1,4 +1,17 @@
-#! /usr/bin/python
+'''Handler for a CGI HTTP Server that aims to resemble Apache.
+
+SECURITY WARNING: DON'T USE THIS CODE UNLESS YOU ARE INSIDE A FIREWALL
+-- it may execute arbitrary Python code or external programs.
+
+The resemblances to Apache include
+  o  requirement for a content-type header in the response from a cgi script
+  o  interpreting a file as a Python script if its name has a ".py" extension,
+     rather than requiring that the file be housed in a cgi-bin directory.
+     As a consequence, html and Python files are served from any sub-directory.
+
+Note that status code 200 is sent prior to execution of a CGI script, so
+scripts cannot send other status codes such as 302 (redirect).
+'''
 
 __version__ = "0.0"
 
@@ -37,8 +50,10 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
            this code of any opportunity to inspect the text returned
            by the script.
         '''
-        path = self.path
-        dir, rest = self.cgi_info
+        # split up the request url.  Comments show sample values from
+        #   GET /cgi-bin/sub/test_html.py?name=Noman HTTP/1.1
+        path = self.path  # e.g. /cgi-bin/sub/test_html.py?name=Noman
+        dir, rest = self.cgi_info  # e.g. /cgi-bin/sub, test_get.py?name=Noman
 
         i = path.find('/', len(dir) + 1)
         while i >= 0:
@@ -67,24 +82,24 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         else:
             script, rest = rest, ''
 
-        scriptFile = dir + '/' + script
-        scriptfile = self.translate_path(scriptFile)
+        scriptname = dir + '/' + script
+        scriptfile = self.translate_path(scriptname)
         if not os.path.exists(scriptfile):
-            self.send_error(404, "No such CGI script (%r)" % scriptFile)
+            self.send_error(404, "No such CGI script (%r)" % scriptname)
             return
         if not os.path.isfile(scriptfile):
             self.send_error(403, "CGI script is not a plain file (%r)" %
-                            scriptFile)
+                            scriptname)
             return
-        ispy = self.is_python(scriptFile)
+        ispy = self.is_python(scriptname)
         if not ispy:
             if not (self.have_fork or self.have_popen2 or self.have_popen3):
                 self.send_error(403, "CGI script is not a Python script (%r)" %
-                                scriptFile)
+                                scriptname)
                 return
             if not self.is_executable(scriptfile):
                 self.send_error(403, "CGI script is not executable (%r)" %
-                                scriptFile)
+                                scriptname)
                 return
 
         # Reference: http://hoohoo.ncsa.uiuc.edu/cgi/env.html
@@ -99,7 +114,7 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         uqrest = urllib.unquote(rest)
         env['PATH_INFO'] = uqrest
         env['PATH_TRANSLATED'] = self.translate_path(uqrest)
-        env['SCRIPT_NAME'] = scriptFile
+        env['SCRIPT_NAME'] = scriptname
         if query:
             env['QUERY_STRING'] = query
         host = self.address_string()
