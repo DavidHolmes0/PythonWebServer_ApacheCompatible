@@ -55,7 +55,11 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         path = self.path  # e.g. /cgi-bin/sub/test_html.py?name=Noman
         dir, rest = self.cgi_info  # e.g. /cgi-bin/sub, test_get.py?name=Noman
 
+        # unknown intent.  The "find" returns -1 for a request of
+        #    GET /cgi-bin/sub/test_html.py?name=Noman HTTP/1.1
         i = path.find('/', len(dir) + 1)
+        # print 'path="%s"\n dir="%s"\n rest="%s"\n i="%s"\n' %\
+        #       (path, dir, rest, i)
         while i >= 0:
             nextdir = path[:i]
             nextrest = path[i+1:]
@@ -82,23 +86,31 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         else:
             script, rest = rest, ''
 
+        # scriptname is valid in a url, like /cgi-bin/sub/test_html.py
+        # In this example, there is a "cgi-bin" directory somewhere in the
+        # host's file system, but that location is omitted from scriptname.
         scriptname = dir + '/' + script
+
+        # scriptfile is a location in the host's file system, like
+        #    C:\Users\D\Documents\cgi-bin\sub\test_html.py
+        # so it includes the directories above the one in which the server
+        # starts looking (in this example, C:\Users\D\Documents).
         scriptfile = self.translate_path(scriptname)
         if not os.path.exists(scriptfile):
-            self.send_error(404, "No such CGI script (%r)" % scriptname)
+            self.send_error(404, "No such CGI script (%s)" % scriptname)
             return
         if not os.path.isfile(scriptfile):
-            self.send_error(403, "CGI script is not a plain file (%r)" %
+            self.send_error(403, "CGI script is not a plain file (%s)" %
                             scriptname)
             return
         ispy = self.is_python(scriptname)
         if not ispy:
             if not (self.have_fork or self.have_popen2 or self.have_popen3):
-                self.send_error(403, "CGI script is not a Python script (%r)" %
+                self.send_error(403, "CGI script is not a Python script (%s)" %
                                 scriptname)
                 return
             if not self.is_executable(scriptfile):
-                self.send_error(403, "CGI script is not executable (%r)" %
+                self.send_error(403, "CGI script is not executable (%s)" %
                                 scriptname)
                 return
 
@@ -181,6 +193,10 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
                 # On Windows, use python.exe, not pythonw.exe
                 interp = interp[:-5] + interp[-4:]
             cmdline = [interp, '-u'] + cmdline
+
+        # Why is this next block here?  It was maintained from
+        # CGIHTTPServer.py, but typically queries contain '=', as in
+        #   ...test_get.py?The-Button=Submit
         if '=' not in query:
             cmdline.append(query)
 
@@ -257,25 +273,28 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         # Multipart messages are ok for email messages, and thus
         # acceptable to the email package, but not for HTTP (I think).
         if msg.is_multipart():
-            return 'The response from script %r looks like a multipart message, '\
+            return 'The response from script %s looks like a multipart message, '\
                    'rather than the simple header-and-body that is expected.'\
                    '  The script result starts with\n%s' \
                    % (scriptFile, repr( scriptResult)[:80])
 
         # A "content-type" header will satisfy Apache and RFC 3875
         if not msg.has_key('content-type'):
-            return 'The response from script %r lacks a content-type header.  '\
+            return 'The response from script %s lacks a content-type header.  '\
                    'Instead it starts with\n%s'\
                    % (scriptFile, repr( scriptResult)[:80])
         # if all checks pass, implicitly return None
 
 
     def is_cgi(self):
-        '''Returns whether self.path is a CGI script, overriding base class method.
+        '''Returns whether self.path requests a CGI script.
 
-        All and only Python files are considered CGI scripts.  It would
-        be ideal to mimic Apache's logic, but in Apache a configuration
-        option, "AddHandler cgi-script", determines which extensions
+        Overrides a base class method.
+
+        All and only Python files (as determined by self.is_python)
+        are considered CGI scripts.  It would be ideal to mimic
+        Apache's logic, but Apache has a configuration option,
+        "AddHandler cgi-script", which defines extensions that
         indicate cgi scripts.
 
         Updates the cgi_info attribute to the tuple
@@ -294,7 +313,7 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         # duplicated here.  Who decided self.path should have different
         # meanings at different times?
         import urlparse
-        pathFromUrl = urlparse.urlsplit(self.path, 'http').path
+        pathFromUrl = urlparse.urlsplit(self.path).path
 
         if self.is_python( pathFromUrl):
             # duplicate the processing done in the base class

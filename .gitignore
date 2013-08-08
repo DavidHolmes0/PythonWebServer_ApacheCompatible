@@ -1,4 +1,7 @@
 # Mac OS X proprietary-format file recording custom attributes of a folder
 .DS_Store
 
+# Windows folder info
+Thumbs.db
+
 *.pyc
