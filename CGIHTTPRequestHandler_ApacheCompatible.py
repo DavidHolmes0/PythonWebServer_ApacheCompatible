@@ -50,24 +50,35 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
            this code of any opportunity to inspect the text returned
            by the script.
         '''
+##        # show attributes that have values and that don't
+##        vals = []
+##        novals = []
+##        for attr in dir(self):
+##            try:  vals.append( (attr, repr( vars(self)[attr])))
+##            except KeyError: novals.append( attr)
+##        print 'attributes with values'
+##        for attr in vals:   print '    %s=%s' % (attr[0],  attr[1])
+##        print 'attributes withOUT values'
+##        for attr in novals: print '    %s' % attr 
+        
         # split up the request url.  Comments show sample values from
         #   GET /cgi-bin/sub/test_html.py?name=Noman HTTP/1.1
         path = self.path  # e.g. /cgi-bin/sub/test_html.py?name=Noman
-        dir, rest = self.cgi_info  # e.g. /cgi-bin/sub, test_get.py?name=Noman
+        urlDir, rest = self.cgi_info  # e.g. /cgi-bin/sub, test_get.py?name=Noman
 
         # unknown intent.  The "find" returns -1 for a request of
         #    GET /cgi-bin/sub/test_html.py?name=Noman HTTP/1.1
-        i = path.find('/', len(dir) + 1)
-        # print 'path="%s"\n dir="%s"\n rest="%s"\n i="%s"\n' %\
-        #       (path, dir, rest, i)
+        i = path.find('/', len(urlDir) + 1)
+        # print 'path="%s"\n urlDir="%s"\n rest="%s"\n i="%s"\n' %\
+        #       (path, urlDir, rest, i)
         while i >= 0:
             nextdir = path[:i]
             nextrest = path[i+1:]
 
             scriptdir = self.translate_path(nextdir)
             if os.path.isdir(scriptdir):
-                dir, rest = nextdir, nextrest
-                i = path.find('/', len(dir) + 1)
+                urlDir, rest = nextDir, nextrest
+                i = path.find('/', len(urlDir) + 1)
             else:
                 break
 
@@ -89,7 +100,7 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         # scriptname is valid in a url, like /cgi-bin/sub/test_html.py
         # In this example, there is a "cgi-bin" directory somewhere in the
         # host's file system, but that location is omitted from scriptname.
-        scriptname = dir + '/' + script
+        scriptname = urlDir + '/' + script
 
         # scriptfile is a location in the host's file system, like
         #    C:\Users\D\Documents\cgi-bin\sub\test_html.py
@@ -298,7 +309,7 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         indicate cgi scripts.
 
         Updates the cgi_info attribute to the tuple
-        (dir, rest).
+        (urlDir, rest).
 
         If any exception is raised, the caller should assume that
         self.path was rejected as invalid and act accordingly.
