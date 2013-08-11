@@ -8,6 +8,7 @@ The resemblances to Apache include
   o  interpreting a file as a Python script if its name has a ".py" extension,
      rather than requiring that the file be housed in a cgi-bin directory.
      As a consequence, html and Python files are served from any sub-directory.
+  o  handling the "extra-path" discussed in the CGI RFC 3875
 
 Note that status code 200 is sent prior to execution of a CGI script, so
 scripts cannot send other status codes such as 302 (redirect).
@@ -296,23 +297,90 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
                    % (scriptFile, repr( scriptResult)[:80])
         # if all checks pass, implicitly return None
 
+    self.cgiSpecs = {}
+    # self.cgiSpecs is a dictionary that accumulates characteristics
+    # of the requested resource that are relevant to its use as a cgi
+    # script.  These comments define self.cgiSpecs's entries.  The
+    # names are derived from the CGI RFC 3875 where appropriate.
+    # Examples are based on a sample requested url of
+    # http://localhost:9000/tests/test_html.py/extra-path/seeRfc3875?myName=Noman
+    # requested on a Windows system by user "D"
+    
+    # scriptAndExtraPath
+    #     contains the portions of the url that the rfc calls
+    #     "script-path" and "extra-path".  The extra-path is optional.
+    #     Begins with a slash for consistency with urlparse.  For
+    #     example
+    #         /tests/test_html.py/extra-path/seeRfc3875
+    # extraPath
+    #     The CGI RFC 3875 and Apache allow an "extra-path"
+    #     specification to appear after the script name.  For example
+    #         /extra-path/seeRfc3875
+    # extension
+    #     The part of the scriptAndExtraPath that qualifies the
+    #     request as a CGI request.  For example,
+    #         .py
+    #         .Py  capitals are ok even on case-sensitive systems
+    #         .pyw
+    # webRoot
+    #     The normalized path of the directory below which the server
+    #     seeks requested resources.  This directory corresponds to
+    #         ~/public_html
+    #     in the Apache setup.  For example
+    #         C:\Users\D\Documents
+    #    This path must be normalized in sense used by
+    #    os.path.normpath, so it can be compated to other normalized
+    #    paths.
+    self.cgiSpecs['webRoot'] = \
+        os.path.normpath( os.path.expanduser('~/Documents'))
+    # fileSpec
+    #     The normalized path in the file system (not in a url) of the
+    #     requested resource.  For example,
+    #         C:\Users\D\Documents\tests\test_html.py
 
+    
+    
     def is_cgi(self):
-        '''Returns whether self.path requests a CGI script.
+        '''Return whether a CGI script is requested, populating cgiSpecs.
 
-        Overrides a base class method.
+        When a cgi script is requested, this routine is additionally
+        responsible for...
+        o  populating self.cgiSpecs, an attribute that is a dictionary 
+           of information to be used in subsequent steps, especially
+           the run_cgi() method
+        o  any useful check that can be done before running the script.
+           Checking at this point allows this routine to return False
+           when the requested resource looks like a cgi script but is
+           deficient in some way.  For example, a file that fails to
+           start with a unix shebang (that is, "#! /usr/bin/python")
+           is considered to *not* be a valid cgi script by this server.
+           Returning False for such files allows the server to send their
+           contents to the client browser, rather than executing them.
 
-        All and only Python files (as determined by self.is_python)
-        are considered CGI scripts.  It would be ideal to mimic
-        Apache's logic, but Apache has a configuration option,
-        "AddHandler cgi-script", which defines extensions that
-        indicate cgi scripts.
+        This routine defines at least the following elements of the
+        self.cgiSpecs dictionary:
+            scriptAndExtraPath
+            extraPath
+            extension
+            fileSpec
 
-        Updates the cgi_info attribute to the tuple
-        (urlDir, rest).
+        Much of this routine's defined role is delegated to routines
+        it calls.
+
+        Currently, all and only Python files are considered CGI
+        scripts, in keeping with Stuy's current configuration of
+        Apache.  There, Apache's configuration option "AddHandler
+        cgi-script" defines extensions that indicate cgi scripts.
+
+        The methods defined here are modeled on those in the base
+        class.  In particular, this method is retained even though
+        most of its functionality is delegated to is_python, in the
+        hope of easing future expansion.
 
         If any exception is raised, the caller should assume that
-        self.path was rejected as invalid and act accordingly.
+        self.path was rejected as invalid and act accordingly.  This
+        warning is retained from the base class, without knowing
+        exactly which exceptions are contemplated.
         '''
 
         # When this method is called, self.path can contain a query, like
@@ -324,11 +392,84 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         # duplicated here.  Who decided self.path should have different
         # meanings at different times?
         import urlparse
-        pathFromUrl = urlparse.urlsplit(self.path).path
+        self.cgiSpecs['scriptAndExtraPath'] = urlparse.urlsplit(self.path).path
+        return self.is_python()
 
-        if self.is_python( pathFromUrl):
-            # duplicate the processing done in the base class
-            self.cgi_info = CGIHTTPServer._url_collapse_path_split(self.path)
+
+    def is_python( self):
+        ''' Return whether a Python script is requested, populating cgiSpecs.
+
+        A python script is requested iff the slash-separated parts of
+        self.cgiSpecs['scriptAndExtraPath'] have a prefix (often the
+        whole string) that ends with a Python file extension (that is,
+        .py or .pyw).  In addition, the file at the corresponding
+        place in the file system must conform to some requirements,
+        such as existence, executability, and starting with a *nix
+        shebang (on all systems, not just *nix).
+
+        Populate additional elements of self.cgiSpecs, as defined in
+        the comments to is_cgi.
+        '''
+        
+        # If this server is expanded to support other types of cgi
+        # scripts, much of this code should be factored out for
+        # re-use.
+        
+        # seek ".py" at the end of a segment of the scriptAndExtraPath
+        pat = re.compile(r'''(?P<anteFirstPy>.*?) #non-greedy, so find 1st .py
+                             (?P<ext>\.py)
+                             (?P<extraPath>/.*)*
+                             $   # without this, the patern would matchx.pyJunk
+                          ''',
+                         re.IGNORECASE | re.VERBOSE)
+        ## # demo
+        ## matched = pat.match('/dirs/./..//all%20sorts/script.pY/extra/path.py')
+        ## print matched.group('anteFirstPy', 'ext', 'extraPath')
+        matched = pat.match( self.cgiSpecs['scriptAndExtraPath'])
+        if not matched: return False
+
+        # Populate self.cgiSpecs.
+        # Empirically, it looks like Apache unquotes path elements
+        # before populating the environment variables.
+        self.cgiSpecs['extraPath'] = urllib.unquote( matched.group('extraPath'))
+        self.cgiSpecs['extension'] = matched.group('ext')
+
+        # build cgiSpecs['fileSpec']
+        urlSpec = urllib.unquote( matched.group('anteFirstPy')) +\
+                  self.cgiSpecs['extension']
+        # ignore any leading /, making a path relative to webRoot
+        if urlSpec[0] == '/':  urlSpec = urlSpec[1:]
+        self.cgiSpecs['fileSpec'] = \
+            os.path.normpath( os.path.join(self.cgiSpecs['webRoot'],
+                                           urlSpec))
             
-            return True
-        else: return False
+        #  ban reference above webRoot via excessive '..' occurrences
+        if not self.cgiSpecs['fileSpec'].startswith(self.cgiSpecs['webRoot']):
+            self.send_error(403, 'Request(s) for parent directory exceeded '
+                            'root of web in url request "%s"' % urlSpec)
+            return False
+
+        # a directory is not a Python script (server may list it)
+        if os.path.isdir( self.cgiSpecs['fileSpec']):  return False
+
+        # file exists, is a regular file, is executable?
+        if not os.path.exists( self.cgiSpecs['fileSpec']):
+            self.send_error(404, '"%s" does not exist.' % urlSpec)
+            return False
+        if not os.path.isfile( self.cgiSpecs['fileSpec']):
+            self.send_error(404, '"%s" is not a regular file.' % urlSpec)
+            return False
+        if not self.is_executable(self.cgiSpecs['fileSpec']):
+            self.send_error(403, '"%s" is not executable by web server.  '
+                            'Consider "chmod +x %s".' %
+                            (self.cgiSpecs['fileSpec'],) * 2)
+            return False
+
+        # all checks passed
+        return True
+        
+
+        
+
+            
+        
