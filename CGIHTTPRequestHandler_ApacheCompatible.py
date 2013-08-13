@@ -27,106 +27,19 @@ import select
 import copy
 
 class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandler):
-    '''HTTP server that requires scripts to return a Content-type header.
-
-       The requirement is imposed for consistency with the Apache
-       server, and (maybe) in accordance with the requirements of the
-       CGI RFC 3875, whose CGI Response, Content-Type section 6.3.1
-       says "If an entity body is returned, the script MUST supply a
-       Content-Type field in the response."
-
-       Imposing this requirement aims to help users of this server
-       notice the absence of the header before transferring scripts to
-       an Apache server.
+    '''HTTP server that enforces compatibility with Apache.
     '''
     def run_cgi(self):
         '''Execute a CGI script.
 
            This code is largely a copy of
-           CGIHTTPServer.CGIHTTPRequestHandler.run_cgi, diverging in
-           the section marked with the comment "require headers".
+           CGIHTTPServer.CGIHTTPRequestHandler.run_cgi.
 
            Unlike the original, this version does not fork processes
-           on *nix systems, because such forking is thought to deprive
-           this code of any opportunity to inspect the text returned
-           by the script.
+           on *nix systems, for simplicity.
         '''
-##        # show attributes that have values and that don't
-##        vals = []
-##        novals = []
-##        for attr in dir(self):
-##            try:  vals.append( (attr, repr( vars(self)[attr])))
-##            except KeyError: novals.append( attr)
-##        print 'attributes with values'
-##        for attr in vals:   print '    %s=%s' % (attr[0],  attr[1])
-##        print 'attributes withOUT values'
-##        for attr in novals: print '    %s' % attr 
-        
-        # split up the request url.  Comments show sample values from
-        #   GET /cgi-bin/sub/test_html.py?name=Noman HTTP/1.1
-        path = self.path  # e.g. /cgi-bin/sub/test_html.py?name=Noman
-        urlDir, rest = self.cgi_info  # e.g. /cgi-bin/sub, test_get.py?name=Noman
 
-        # unknown intent.  The "find" returns -1 for a request of
-        #    GET /cgi-bin/sub/test_html.py?name=Noman HTTP/1.1
-        i = path.find('/', len(urlDir) + 1)
-        # print 'path="%s"\n urlDir="%s"\n rest="%s"\n i="%s"\n' %\
-        #       (path, urlDir, rest, i)
-        while i >= 0:
-            nextdir = path[:i]
-            nextrest = path[i+1:]
-
-            scriptdir = self.translate_path(nextdir)
-            if os.path.isdir(scriptdir):
-                urlDir, rest = nextDir, nextrest
-                i = path.find('/', len(urlDir) + 1)
-            else:
-                break
-
-        # find an explicit query string, if present.
-        i = rest.rfind('?')
-        if i >= 0:
-            rest, query = rest[:i], rest[i+1:]
-        else:
-            query = ''
-
-        # dissect the part after the directory name into a script name &
-        # a possible additional path, to be stored in PATH_INFO.
-        i = rest.find('/')
-        if i >= 0:
-            script, rest = rest[:i], rest[i:]
-        else:
-            script, rest = rest, ''
-
-        # scriptname is valid in a url, like /cgi-bin/sub/test_html.py
-        # In this example, there is a "cgi-bin" directory somewhere in the
-        # host's file system, but that location is omitted from scriptname.
-        scriptname = urlDir + '/' + script
-
-        # scriptfile is a location in the host's file system, like
-        #    C:\Users\D\Documents\cgi-bin\sub\test_html.py
-        # so it includes the directories above the one in which the server
-        # starts looking (in this example, C:\Users\D\Documents).
-        scriptfile = self.translate_path(scriptname)
-        if not os.path.exists(scriptfile):
-            self.send_error(404, "No such CGI script (%s)" % scriptname)
-            return
-        if not os.path.isfile(scriptfile):
-            self.send_error(403, "CGI script is not a plain file (%s)" %
-                            scriptname)
-            return
-        ispy = self.is_python(scriptname)
-        if not ispy:
-            if not (self.have_fork or self.have_popen2 or self.have_popen3):
-                self.send_error(403, "CGI script is not a Python script (%s)" %
-                                scriptname)
-                return
-            if not self.is_executable(scriptfile):
-                self.send_error(403, "CGI script is not executable (%s)" %
-                                scriptname)
-                return
-
-        # Reference: http://hoohoo.ncsa.uiuc.edu/cgi/env.html
+        # calculate environment variables for subprocess      
         # XXX Much of the following could be prepared ahead of time!
         env = copy.deepcopy(os.environ)
         env['SERVER_SOFTWARE'] = self.version_string()
@@ -135,12 +48,15 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         env['SERVER_PROTOCOL'] = self.protocol_version
         env['SERVER_PORT'] = str(self.server.server_port)
         env['REQUEST_METHOD'] = self.command
-        uqrest = urllib.unquote(rest)
-        env['PATH_INFO'] = uqrest
-        env['PATH_TRANSLATED'] = self.translate_path(uqrest)
-        env['SCRIPT_NAME'] = scriptname
-        if query:
-            env['QUERY_STRING'] = query
+        if 'extraPath' in self.cgiSpecs:
+            env['PATH_INFO'] = self.cgiSpecs['extraPath']
+            env['PATH_TRANSLATED'] =\
+              os.path.normpath( os.path.join(self.cgiSpecs['webRoot'],
+                                             self.cgiSpecs['extraPath'][1:]))
+                                             # ignore leading /
+        env['SCRIPT_NAME'] = self.cgiSpecs['scriptUrl']
+        if 'query' in self.cgiSpecs:
+            env['QUERY_STRING'] = self.cgiSpecs['query']
         host = self.address_string()
         if host != self.client_address[0]:
             env['REMOTE_HOST'] = host
@@ -193,25 +109,17 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
 
         self.send_response(200, "Script output follows")
 
-        decoded_query = query.replace('+', ' ')
-
-        # Changes to require headers start here.
-        # Always use `subprocess`, even when os.fork() exists.
-        import subprocess
-        cmdline = [scriptfile]
-        if self.is_python(scriptfile):
-            interp = sys.executable
-            if interp.lower().endswith("w.exe"):
-                # On Windows, use python.exe, not pythonw.exe
-                interp = interp[:-5] + interp[-4:]
-            cmdline = [interp, '-u'] + cmdline
+        # Always use `subprocess`, even when os.fork exists (unlike base class).
+        cmdline = [ self.cgiSpecs['interpreter'], '-u',
+                    self.cgiSpecs['scriptFile']]
 
         # Why is this next block here?  It was maintained from
         # CGIHTTPServer.py, but typically queries contain '=', as in
         #   ...test_get.py?The-Button=Submit
-        if '=' not in query:
-            cmdline.append(query)
+        if 'query' in self.cgiSpecs and '=' not in self.cgiSpecs['query']:
+            cmdline.append( self.cgiSpecs['query'])
 
+        import subprocess
         self.log_message("command: %s", subprocess.list2cmdline(cmdline))
         try:
             nbytes = int(length)
@@ -234,7 +142,7 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         stdout, stderr = p.communicate(data)
 
         # Check that stdout matches Apache's requirements
-        whine = self._apacheObjection( stdout, scriptfile)
+        whine = self._apacheObjection( stdout, self.cgiSpecs['scriptFile'])
         if whine:
             self.send_error(500, whine)  #  Why 500:  when the script's 
               # result lacks a content-type header, Apache returns
@@ -272,10 +180,10 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
                junk : more junk\n\n
            Sad.  This routine imposes a more stringent requirement,
            namely, text that the email package considers to be header
-           that contains a content-type field, such as either of
+           that contains a content-type field, for example, either of
                Content-type: text/html\n\n
                Date: Tue, 15 Nov 1994 08:12:31 GMT\nContent-type: text/plain\n\n
-           Apache accepts both of these.
+           Apache accepts both of these samples.
         '''
         import email.parser
         msgParser = email.parser.HeaderParser()
@@ -297,16 +205,18 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
                    % (scriptFile, repr( scriptResult)[:80])
         # if all checks pass, implicitly return None
 
-    self.cgiSpecs = {}
+    cgiSpecs = {}
     # self.cgiSpecs is a dictionary that accumulates characteristics
     # of the requested resource that are relevant to its use as a cgi
     # script.  These comments define self.cgiSpecs's entries.  The
-    # names are derived from the CGI RFC 3875 where appropriate.
-    # Examples are based on a sample requested url of
+    # names of dictionary entries are derived from the CGI RFC 3875
+    # where appropriate. They aim to maintain the distinction between
+    # the specification of the requested resource in the url versus in
+    # the file system.  Examples are based on a sample requested url of
     # http://localhost:9000/tests/test_html.py/extra-path/seeRfc3875?myName=Noman
     # requested on a Windows system by user "D"
     
-    # scriptAndExtraPath
+    # scriptAndExtraPathUrl
     #     contains the portions of the url that the rfc calls
     #     "script-path" and "extra-path".  The extra-path is optional.
     #     Begins with a slash for consistency with urlparse.  For
@@ -317,26 +227,38 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
     #     specification to appear after the script name.  For example
     #         /extra-path/seeRfc3875
     # extension
-    #     The part of the scriptAndExtraPath that qualifies the
+    #     The part of the scriptAndExtraPathUrl that qualifies the
     #     request as a CGI request.  For example,
     #         .py
     #         .Py  capitals are ok even on case-sensitive systems
     #         .pyw
+    # scriptUrl
+    #     The portion of the url that identifies the script, destined
+    #     for the SCRIPT_NAME environment variable.  See the
+    #     definition of SCRIPT_NAME in the CGI RFC 3875.  For example,
+    #          /tests/test_html.py   
+    # scriptFile
+    #     The normalized path in the file system (not in a url) of the
+    #     requested resource.  For example,
+    #         C:\Users\D\Documents\tests\test_html.py
     # webRoot
     #     The normalized path of the directory below which the server
     #     seeks requested resources.  This directory corresponds to
     #         ~/public_html
-    #     in the Apache setup.  For example
+    #     in the Apache setup.  For example, user D's files are below
     #         C:\Users\D\Documents
-    #    This path must be normalized in sense used by
-    #    os.path.normpath, so it can be compated to other normalized
+    #    This path must be "normalized" as that term is  used by
+    #    os.path.normpath, so it can be compared to other normalized
     #    paths.
-    self.cgiSpecs['webRoot'] = \
-        os.path.normpath( os.path.expanduser('~/Documents'))
-    # fileSpec
-    #     The normalized path in the file system (not in a url) of the
-    #     requested resource.  For example,
-    #         C:\Users\D\Documents\tests\test_html.py
+    cgiSpecs['webRoot'] = os.path.normpath( os.path.expanduser('~/Documents'))
+    #
+    # interpreter
+    #     The command to invoke the appropriate interpreteter for the
+    #     cgi script.
+    # query
+    #     the query from the url, if one was specified; otherwise the
+    #     dictionary contains no 'query' key.  The value excludes the
+    #     '?' delimeter.
 
     
     
@@ -345,10 +267,8 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
 
         When a cgi script is requested, this routine is additionally
         responsible for...
-        o  populating self.cgiSpecs, an attribute that is a dictionary 
-           of information to be used in subsequent steps, especially
-           the run_cgi() method
-        o  any useful check that can be done before running the script.
+        o  populating self.cgiSpecs
+        o  any useful checks that can be done before running the script.
            Checking at this point allows this routine to return False
            when the requested resource looks like a cgi script but is
            deficient in some way.  For example, a file that fails to
@@ -359,28 +279,32 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
 
         This routine defines at least the following elements of the
         self.cgiSpecs dictionary:
-            scriptAndExtraPath
+            scriptAndExtraPathUrl
             extraPath
             extension
-            fileSpec
+            scriptUrl
+            scriptFile
+            interpreter
+            query, if a query was specified in the url
 
-        Much of this routine's defined role is delegated to routines
+        Much of this routine's operation is delegated to routines
         it calls.
 
         Currently, all and only Python files are considered CGI
         scripts, in keeping with Stuy's current configuration of
-        Apache.  There, Apache's configuration option "AddHandler
-        cgi-script" defines extensions that indicate cgi scripts.
+        Apache.  There, Apache's configuration option
+            AddHandler cgi-script
+        defines extensions that indicate cgi scripts.
 
         The methods defined here are modeled on those in the base
-        class.  In particular, this method is retained even though
-        most of its functionality is delegated to is_python, in the
-        hope of easing future expansion.
+        class, in the hope of easing future expansion.  In particular,
+        this method is retained even though most of its functionality
+        is delegated to is_python.
 
         If any exception is raised, the caller should assume that
         self.path was rejected as invalid and act accordingly.  This
-        warning is retained from the base class, without knowing
-        exactly which exceptions are contemplated.
+        warning is retained from the base class, without knowing which
+        -- if any -- exceptions are still expected.
         '''
 
         # When this method is called, self.path can contain a query, like
@@ -392,30 +316,33 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         # duplicated here.  Who decided self.path should have different
         # meanings at different times?
         import urlparse
-        self.cgiSpecs['scriptAndExtraPath'] = urlparse.urlsplit(self.path).path
+        urlParts = urlparse.urlsplit(self.path)
+        self.cgiSpecs['scriptAndExtraPathUrl'] = urlParts.path
+        if urlParts.query:  self.cgiSpecs['query'] = urlParts.query
         return self.is_python()
 
 
     def is_python( self):
         ''' Return whether a Python script is requested, populating cgiSpecs.
 
-        A python script is requested iff the slash-separated parts of
-        self.cgiSpecs['scriptAndExtraPath'] have a prefix (often the
-        whole string) that ends with a Python file extension (that is,
-        .py or .pyw).  In addition, the file at the corresponding
-        place in the file system must conform to some requirements,
-        such as existence, executability, and starting with a *nix
-        shebang (on all systems, not just *nix).
+        A Python script is requested iff the slash-separated parts of
+        self.cgiSpecs['scriptAndExtraPathUrl'] have a part that ends
+        with a Python file extension (that is, .py or .pyw).  In
+        addition, the file at the corresponding place in the file
+        system must conform to some requirements, such as existence,
+        executability, and starting with a *nix shebang (on all
+        systems, not just *nix).
 
         Populate additional elements of self.cgiSpecs, as defined in
         the comments to is_cgi.
         '''
         
-        # If this server is expanded to support other types of cgi
-        # scripts, much of this code should be factored out for
+        # If this server code is expanded to support other types of
+        # cgi scripts, much of this code should be factored out for
         # re-use.
         
-        # seek ".py" at the end of a segment of the scriptAndExtraPath
+        # seek ".py" at the end of a segment of the scriptAndExtraPathUrl
+        import re
         pat = re.compile(r'''(?P<anteFirstPy>.*?) #non-greedy, so find 1st .py
                              (?P<ext>\.py)
                              (?P<extraPath>/.*)*
@@ -425,47 +352,64 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         ## # demo
         ## matched = pat.match('/dirs/./..//all%20sorts/script.pY/extra/path.py')
         ## print matched.group('anteFirstPy', 'ext', 'extraPath')
-        matched = pat.match( self.cgiSpecs['scriptAndExtraPath'])
+        matched = pat.match( self.cgiSpecs['scriptAndExtraPathUrl'])
         if not matched: return False
 
         # Populate self.cgiSpecs.
-        # Empirically, it looks like Apache unquotes path elements
-        # before populating the environment variables.
-        self.cgiSpecs['extraPath'] = urllib.unquote( matched.group('extraPath'))
+        # From the CGI RFC 3875 and from empirical tests of Apache,
+        # the values are url-decoded (for example, convert "%20" to space).
+        self.cgiSpecs['scriptUrl'] = urllib.unquote( matched.group('anteFirstPy'))+\
+                                     matched.group('ext')  # already no url encoding
+        if matched.group('extraPath'):
+            self.cgiSpecs['extraPath'] = urllib.unquote( matched.group('extraPath'))
         self.cgiSpecs['extension'] = matched.group('ext')
 
-        # build cgiSpecs['fileSpec']
+        # build cgiSpecs['scriptFile']
         urlSpec = urllib.unquote( matched.group('anteFirstPy')) +\
                   self.cgiSpecs['extension']
         # ignore any leading /, making a path relative to webRoot
         if urlSpec[0] == '/':  urlSpec = urlSpec[1:]
-        self.cgiSpecs['fileSpec'] = \
+        self.cgiSpecs['scriptFile'] = \
             os.path.normpath( os.path.join(self.cgiSpecs['webRoot'],
                                            urlSpec))
             
         #  ban reference above webRoot via excessive '..' occurrences
-        if not self.cgiSpecs['fileSpec'].startswith(self.cgiSpecs['webRoot']):
-            self.send_error(403, 'Request(s) for parent directory exceeded '
+        if not self.cgiSpecs['scriptFile'].startswith(self.cgiSpecs['webRoot']):
+            self.send_error(403, 'Request(s) for parent directory using ".." exceed '
                             'root of web in url request "%s"' % urlSpec)
             return False
 
         # a directory is not a Python script (server may list it)
-        if os.path.isdir( self.cgiSpecs['fileSpec']):  return False
+        if os.path.isdir( self.cgiSpecs['scriptFile']):  return False
 
         # file exists, is a regular file, is executable?
-        if not os.path.exists( self.cgiSpecs['fileSpec']):
-            self.send_error(404, '"%s" does not exist.' % urlSpec)
+        if not os.path.exists( self.cgiSpecs['scriptFile']):
+            self.send_error(404, '"%s" does not exist' % urlSpec)
             return False
-        if not os.path.isfile( self.cgiSpecs['fileSpec']):
-            self.send_error(404, '"%s" is not a regular file.' % urlSpec)
+        if not os.path.isfile( self.cgiSpecs['scriptFile']):
+            self.send_error(404, '"%s" is not a regular file' % urlSpec)
             return False
-        if not self.is_executable(self.cgiSpecs['fileSpec']):
-            self.send_error(403, '"%s" is not executable by web server.  '
-                            'Consider "chmod +x %s".' %
-                            (self.cgiSpecs['fileSpec'],) * 2)
+
+        # is the file non-executable?  It would be nice to determine
+        # this by calling self.is_executable.  Sadly, that method
+        # returns False for Windows files!  Check executability only
+        # on non-Windows systems.
+        import stat, platform
+        if platform.system() != 'Windows' and \
+           not os.stat( self.cgiSpecs['scriptFile']).st_mode & stat.S_IXUSR:
+            self.send_error(403, '"%s" is not executable by the web server.  '
+                            'Consider "chmod +x %s"' %\
+                            ((self.cgiSpecs['scriptFile'],) * 2))
             return False
 
         # all checks passed
+        
+        # set Python as the interpreter for this Python cgi script
+        if sys.executable.lower().endswith("w.exe"):
+            # On Windows, use python.exe, not pythonw.exe
+            self.cgiSpecs['interpreter'] = sys.executable[:-5] + sys.executable[-4:]
+        else:  self.cgiSpecs['interpreter'] = sys.executable
+            
         return True
         
 
