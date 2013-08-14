@@ -2,17 +2,15 @@
 
 import BaseHTTPServer
 from CGIHTTPRequestHandler_ApacheCompatible import CGIHTTPRequestHandler_ApacheCompatible
-import sys,os
+import os
 
 def main():
-    # relocate to the directory holding this file
-    path=sys.argv[0]
-    pos=path.rfind('\\')
-    if pos >= 0:
-        curdir=path[:pos+1]
-    else:
-        curdir='.'
-    os.chdir(curdir)
+    # relocate to the directory that is the web root
+    # This directory corresponds to
+    #     ~/public_html
+    # in the Apache setup.  For example, Windows user D's files are below
+    #     C:\Users\D\Documents
+    os.chdir( os.path.normpath( os.path.expanduser('~/Documents')))
     print '***** Web server base directory: '+os.getcwd()
     
     try:
