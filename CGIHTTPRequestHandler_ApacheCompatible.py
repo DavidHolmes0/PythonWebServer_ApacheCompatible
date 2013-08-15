@@ -18,13 +18,14 @@ __version__ = "0.0"
 
 __all__ = ["CGIHTTPRequestHandler_ApacheCompatible"]
 
-import os
-import sys
-import urllib
-import BaseHTTPServer
 import CGIHTTPServer
-import select
 import copy
+import os
+import re
+import select
+import sys
+import time
+import urllib
 
 class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandler):
     '''HTTP server that enforces compatibility with Apache.
@@ -71,6 +72,12 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
               os.path.normpath( os.path.join( webRoot,
                   self._cgiSpecs['extraPath'][1:]))  # ignore leading /
         env['SCRIPT_NAME'] = self._cgiSpecs['scriptUrl']
+
+        # SCRIPT_FILENAME is not defined by CGI RFC 3875, but is created
+        # by Apache, with little documentation.  The best I found is
+        # http://wiki.apache.org/httpd/RewriteContext
+        env['SCRIPT_FILENAME'] = self._cgiSpecs['scriptFile']
+        
         if 'query' in self._cgiSpecs:
             env['QUERY_STRING'] = self._cgiSpecs['query']
         host = self.address_string()
@@ -136,8 +143,12 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
             cmdline.append( self._cgiSpecs['query'])
 
         import subprocess
-        self.log_message("command: %s", subprocess.list2cmdline(cmdline))
-        self.log_message('in directory "%s"', scriptDir)
+        self.log_message(
+            'command: %s\n   in directory "%s"\n   Starting script on %s...',
+             subprocess.list2cmdline(cmdline),
+             scriptDir,
+             time.strftime('%A, %Y-%m-%d %H:%M:%S'),
+            )
         try:
             nbytes = int(length)
         except (TypeError, ValueError):
@@ -161,13 +172,11 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
 
         # Check that stdout matches Apache's requirements
         whine = self._apacheObjection( stdout, self._cgiSpecs['scriptFile'])
-        if whine:
-            self.send_error(500, whine)  #  Why 500:  when the script's 
-              # result lacks a content-type header, Apache returns
-              # error 500 "Internal Server Error".  That message seems
-              # misleading, but I will grudgingly maintain the error number.
-            stderr += whine
-
+        if whine:  self.send_error(500, whine)
+            #  Why 500:  when the script's result lacks a content-type
+            # header, Apache returns error 500 "Internal Server
+            # Error".  That message seems misleading, but I will
+            # grudgingly maintain the error number.
         else:  # script output is expected to satisfy Apache
             self.wfile.write(stdout)
         if stderr:
@@ -211,15 +220,15 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         # Multipart messages are ok for email messages, and thus
         # acceptable to the email package, but not for HTTP (I think).
         if msg.is_multipart():
-            return 'The response from script %s looks like a multipart message, '\
-                   'rather than the simple header-and-body that is expected.'\
-                   '  The script result starts with\n%s' \
+            return 'A multipart message was received from script "%s", '\
+                   'rather than the simple header-and-body that is expected.  '\
+                   'The script result starts with\n%s' \
                    % (scriptFile, repr( scriptResult)[:80])
 
         # A "content-type" header will satisfy Apache and RFC 3875
         if not msg.has_key('content-type'):
-            return 'The response from script %s lacks a content-type header.  '\
-                   'Instead it starts with\n%s'\
+            return 'The required content-type header is missing in the '\
+                'output from script "%s".  Instead the output starts with\n%s'\
                    % (scriptFile, repr( scriptResult)[:80])
         # if all checks pass, implicitly return None
 
@@ -367,7 +376,6 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         webRoot = os.path.normpath( os.getcwd())
         
         # seek ".py" at the end of a segment of the scriptAndExtraPathUrl
-        import re
         pat = re.compile(r'''(?P<anteFirstPy>.*?) #non-greedy, so find 1st .py
                              (?P<ext>\.py)
                              (?P<extraPath>/.*)*
@@ -404,13 +412,14 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         #     telnet localhost 9000
         #     GET /../x.py  <return><return>
         if not self._cgiSpecs['scriptFile'].startswith(webRoot):
-            self.send_error(403, 'Request(s) for parent directory using ".." exceed '
-                            'root of web, in url request "%s"' % urlSpec)
+            self.send_error(403, 'Request(s) for parent directory using ".." '
+                            'exceed root of web, in url request "%s"' % urlSpec)
             return True
 
         # file exists, is a regular file, is executable?
         if not os.path.exists( self._cgiSpecs['scriptFile']):
-            self.send_error(404, '"%s" does not exist' % self._cgiSpecs['scriptFile'])
+            self.send_error(404, 'The requested script is not found at "%s"' %\
+                            self._cgiSpecs['scriptFile'])
             return True
         if not os.path.isfile( self._cgiSpecs['scriptFile']):
             self.send_error(404, '"%s" is not a regular file' % self._cgiSpecs['scriptFile'])
@@ -423,10 +432,18 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
         import stat, platform
         if platform.system() != 'Windows' and \
            not os.stat( self._cgiSpecs['scriptFile']).st_mode & stat.S_IXUSR:
-            self.send_error(403, '"%s" is not executable by the web server.  '
-                            'Consider "chmod +x %s"' %\
+            self.send_error(403, 'The web server cannot execute the file '
+                            'at "%s".  Consider "chmod +x %s"' %\
                             ((self._cgiSpecs['scriptFile'],) * 2))
             return True
+
+        if self._lacksShebang():
+            self.send_error(403, 'The shebang line is missing at the start of '
+                                 'script "%s".  Make the first line of the '
+                                 'script "#! /usr/bin/python " (without '
+                                 'the quotes)' % self._cgiSpecs['scriptFile'])
+            return True
+            
 
         # all checks passed
         self._cgiSpecs['okToRun'] = True
@@ -439,8 +456,14 @@ class CGIHTTPRequestHandler_ApacheCompatible( CGIHTTPServer.CGIHTTPRequestHandle
             
         return True
         
+    def _lacksShebang( self):
+        '''Returns whether the script file fails to start with a shebang.'''
 
+        pat = re.compile(r'#![\t ]*/usr/bin/(env[\t ]+)?python')
+        f = open( self._cgiSpecs['scriptFile'])
+        matched = pat.match( f.readline())
+        f.close()
+        return not bool(matched)
         
-
-            
+    
         

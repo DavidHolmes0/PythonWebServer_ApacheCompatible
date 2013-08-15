@@ -1,15 +1,16 @@
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
-<html><head><title>Test Post</title>
+<html>
+  <head><title>Test Post</title></head>
+  <body>
+    <p><b>Testing Python POST-Handling...</b></p>
+    <form method="POST" action="test_get.py">
+      <p>first_text: <input name="first_text" size="20" type="text"></p>
+      <p>second_text: <input name="second_text" size="20" type="text"></p>
+      <p>first_check: <input name="C1" value="ON" type="checkbox"></p>
+      <p>
+        <input value="Submit" name="The-Button" type="submit">
+        <input value="Reset" name="B2" type="reset">
+      </p>
+    </form>
+  </body>
+</html>
 
-</head>
-<body>
-<p>
-<b>Testing Python POST-Handling...</b>
-</p>
-<form method="post" action="test_get.py">
-<p>first_text: <input name="first_text" size="20" type="text"></p>
-<p>second_text: <input name="second_text" size="20" type="text"></p>
-<p>first_check: <input name="C1" value="ON" type="checkbox"></p>
-<p><input value="Submit" name="The-Button" type="submit"><input value="Reset" name="B2" type="reset"></p>
-</form>
-</body></html>

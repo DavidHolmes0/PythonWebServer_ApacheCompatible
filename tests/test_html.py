@@ -1,3 +1,4 @@
+#! /usr/bin/python
 HTML_HEADER='Content-type: text/html\n\n'
 
 def Main():

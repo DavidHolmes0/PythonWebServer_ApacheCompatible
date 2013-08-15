@@ -1,4 +1,4 @@
-#! /usr/bin/python
+#! /usr/bin/python 
 
 import cgitb; cgitb.enable()
 print 'there should be a Content-type header here: text/html\n'\
