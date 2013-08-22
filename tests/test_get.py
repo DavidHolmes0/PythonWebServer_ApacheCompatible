@@ -9,7 +9,11 @@ def Main():
     form=cgi.FieldStorage()
     if len(form)>0:
         for key in form.keys():
-            print 'Key: <b>%s</b>  Value: <b>%s</b><br>' % (key,form[key].value)
+            # referring to form[key].value would intermittently produce
+            #      'list' object has no attribute 'value'
+            # for key = 'C1', form = FieldStorage(None, None, [MiniFieldStorage('firs...'ON'), MiniFieldStorage('The-Button', 'Submit')]), ]
+            print 'Key: <b>%s</b>  Value: <b>%s</b><br>' % \
+                  (key, form.getfirst(key))
     else:
         print 'No fields'
     print '</p><p><b>Success in GET/POST Processing</b><br>'

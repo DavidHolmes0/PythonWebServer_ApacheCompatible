@@ -1,0 +1,154 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Strict//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>C:\Users\D\Documents\pythonPractice\PythonWebServer_ApacheCompatible\.README.md.html</title>
+
+
+<style type="text/css">
+
+.markdown-body {
+    border: 1px solid #CACACA;
+    padding: 30px;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.markdown-body h2 {
+    border-bottom: 1px solid #CCCCCC;
+}
+
+.markdown-body code {
+    white-space: nowrap;
+}
+
+.markdown-body code, .markdown-body tt {
+    background-color: #F8F8F8;
+    border: 1px solid #EAEAEA;
+    border-radius: 3px 3px 3px 3px;
+    margin: 0 2px;
+    padding: 0 5px;
+}
+
+.markdown-body .highlight pre, .markdown-body pre {
+    background-color: #F8F8F8;
+    border: 1px solid #CCCCCC;
+    border-radius: 3px 3px 3px 3px;
+    font-size: 13px;
+    line-height: 19px;
+    overflow: auto;
+    padding: 6px 10px;
+}
+
+.markdown-body img {
+    border: 0 none;
+}
+
+pre, code, tt {
+    font-family: Consolas,"Liberation Mono",Courier,monospace;
+    font-size: 12px;
+}
+</style>
+
+
+<script type="text/javascript">
+
+function getDocumentScrollTop() 
+{
+   var res = document.body.scrollTop || document.documentElement.scrollTop || window.pageYOffset || 0;
+   // alert(res);
+   return res;
+}
+
+function setDocumentScrollTop(ypos) 
+{
+	window.scrollTo(0, ypos);
+}
+
+</script>
+
+
+</head>
+<body class="markdown-body">
+<h1>
+<a name="apache-compatible-python-web-server-acpws" class="anchor" href="#apache-compatible-python-web-server-acpws"><span class="octicon octicon-link"></span></a>Apache-compatible Python Web Server ("ACPWS")</h1>
+
+<p>A version of Peter's PythonWebServer ("PWS") that behaves more like Apache.</p>
+
+<h2>
+<a name="security-warnings" class="anchor" href="#security-warnings"><span class="octicon octicon-link"></span></a>security warnings</h2>
+
+<p>The docstring for a base class warns against using this server unless you are inside a firewall, because "it may execute arbitrary Python code or external programs."</p>
+
+<p>The choice of the web root probably exposes excessive amounts of the directory tree to browsing.  </p>
+
+<p>The intentionally-explicit error messages raise vulnerability to <a href="http://en.wikipedia.org/wiki/Cross-site_scripting">cross-site scripting</a>.</p>
+
+<h2>
+<a name="background" class="anchor" href="#background"><span class="octicon octicon-link"></span></a>background</h2>
+
+<p>For an introductory comp sci course, students develop html and server-side Python 2.7 scripts for eventual deployment to an Apache server.  For initial development, programmers can run this Apache-compatible server on their local machine, thereby reducing network issues and dependency on the remote, weak machine that is running Apache. Eventual porting to the Apache-running machine has the benefit of publishing their results for others to see.</p>
+
+<p>For the local development to be most useful, the local server should closely resemble the Apache server.  Apache imposes more standards than the Python-standard modules on which ACPWS is based.  The problem with the more relaxed approach is that a programmer could create a script that worked with the local server but for which Apache returned an unhelpful error message like "Internal Server Error".  </p>
+
+<h2>
+<a name="behavior" class="anchor" href="#behavior"><span class="octicon octicon-link"></span></a>behavior</h2>
+
+<p>The behavior of ACPWS differs from that of its base <code>CGIHTTPRequestHandler</code> class in several respects:</p>
+
+<p><strong>serve from any directory</strong>  Html files and Python CGI scripts can be stored in any directory below the web root.  The base class required special-purpose, single-level <code>cgi-bin</code> and <code>html-stuff</code> directories below the server's directory.  The new behavior, by contrast, supports arbitrary levels of subdirectories and organizing files into directories based on projects, rather than by the technology used for those files.  For example, Windows user Ernie, while working on homework #5, might create the directory <code>C:\Users\Ernie\Documents\homework\5\</code> and populate it with the files <code>ask.html</code>, <code>answer.py</code>, and <code>data.csv</code>.</p>
+
+<p><strong>paths relative to script's directory</strong> An <code>open</code> statement in a Python cgi script in directory <em>x</em> looks for files starting in directory <em>x</em>.  More precisely, relative paths are relative to the directory holding the script.  The aim is to support storing a script's data files in the script's directory, or one of its subdirectories, as is commonly done with Apache.  Before this change, scripts in <code>PythonWebServer/cgi-bin/</code> by default opened files in the parent <code>PythonWebServer/</code> directory.</p>
+
+<p><strong>restrictions like Apache's</strong>  Before this change, PWS accepted scripts that Apache rejected.  The new version aims to produce understandable error messages for violating Apache's rules, including...</p>
+
+<ul>
+<li><p>CGI scripts must start with a shebang (such as <code>#! /usr/bin/python</code>), even on Windows.</p></li>
+<li><p>Python CGI scripts on *nix systems, including Mac OS X, must be marked as executable, just as they must on the Apache servers.</p></li>
+<li>
+<p>Script output must start with HTML header(s) that include at least the content-type, like <code>Content-type: text/html\n\n</code>  This restriction accords with the <a href="http://www.ietf.org/rfc/rfc3875">CGI standard</a> section 6.3.1 (CGI Response, Content-Type).  Apache is more lax, even more lax than <a href="http://httpd.apache.org/docs/current/howto/cgi.html#writing">its own documentation</a> suggests.  I think Apache will accept any line with a colon that is followed by a blank line.  Certainly Apache 2 accepts the following two "headers" that are invalid according the the standards cited in the "references" section: </p>
+
+<pre><code>:\n\n
+</code></pre>
+
+<pre><code>junk : more junk\n\n
+</code></pre>
+</li>
+</ul><p>Minor changes include...</p>
+
+<p><strong>extra-path support</strong>  The <a href="http://www.ietf.org/rfc/rfc3875">CGI standard</a> section 3.3 discusses adding "extra-path" information to a requested URL, <em>after</em> the name of the CGI script.  Apache supports that syntax, so that <a href="http://homer.stuy.edu/%7Edholmes/showEnv.py/extraPath/seeRfc3875?myQuery">http://homer.stuy.edu/~dholmes/showEnv.py/extraPath/seeRfc3875?myQuery</a> runs the showEnv.py script, making the information "/extraPath/seeRfc3875" available to that script in the environment variables <code>PATH_INFO</code> and <code>PATH_TRANSLATED</code>.  No one wants to use this feature, but implementing it was cheap given the significant changes.</p>
+
+<p><strong>SCRIPT_FILENAME</strong>  For CGI scripts, environment variable <code>SCRIPT_FILENAME</code> is set to to the location in the file system of the CGI script.  This environment variable is not defined in the <a href="http://www.ietf.org/rfc/rfc3875">CGI standard</a>, but it is <a href="http://wiki.apache.org/httpd/RewriteContext">set by Apache</a> .</p>
+
+<h2>
+<a name="implementation" class="anchor" href="#implementation"><span class="octicon octicon-link"></span></a>implementation</h2>
+
+<p>Implementation is based on Python's basic <code>HTTPServer</code> and the <code>CGIHTTPRequestHandler</code> class, which is defined in Python 2.7's CGIHTTPServer.py.  </p>
+
+<p>When a client's request specifies a Python script to be executed, the handler's <code>run_cgi</code> method invokes the script and sends the output of that script to the client.  The Apache-compatible PWS needs an opportunity to inspect the output before it is sent to the client.  So this implementation derives a new class, <code>CGIHTTPRequestHandler_ApacheCompatible</code>, from the standard <code>CGIHTTPRequestHandler</code>, overriding the <code>run_cgi</code> method with one that implements the appropriate checks, between invoking the script and delivering the output to the client.</p>
+
+<p>The implementation simplifies the standard <code>CGIHTTPRequestHandler</code>:  the base class uses Python's <code>subprocess</code> module on Windows systems, but forks a child process on *nix system.  The fork affords no chance for the handler to inspect the output from the script (as I understand it).  So the implementation of <code>CGIHTTPRequestHandler_ApacheCompatible</code> uses the <code>subprocess</code> module on *nix systems, just as it does for Windows.</p>
+
+<p>Others have wanted to eliminate the fork, as shown by <a href="http://bugs.python.org/review/16945/diff/7464/Lib/http/server.py">this Python patch</a>.  I am ignorant concerning the context for this patch.  Is it in some later version of Python?  At any rate, it is reassuring that the author and reviewer of the patch seem to have made the same simplification that I did.</p>
+
+<h2>
+<a name="testing" class="anchor" href="#testing"><span class="octicon octicon-link"></span></a>testing</h2>
+
+<p>Preliminary testing has been done...</p>
+
+<ul>
+<li>on Windows 7, with Python 2.7.3 and 4 browsers (Internet Explorer v10, Chrome, Firefox, Safari) </li>
+<li>on Mac OS X, with Python 2.7.5 and 3 browsers (Chrome, Firefox, Safari)
+More testing and bug reports are welcome.</li>
+</ul><h2>
+<a name="references-on-content-type-headers" class="anchor" href="#references-on-content-type-headers"><span class="octicon octicon-link"></span></a>references on content-type headers</h2>
+
+<ul>
+<li><p><a href="http://httpd.apache.org/docs/current/howto/cgi.html#writing">Apache's rules for CGI</a> say "The first thing... written by your program should be a set of HTTP headers, including the Content-Type, followed by a blank line."</p></li>
+<li><p><a href="http://www.ietf.org/rfc/rfc3875">RFC 3875 for the Common Gateway Interface</a>  section 6.3.1 (CGI Response, Content-Type): "If an entity body is returned, the script MUST supply a Content-Type field in the response."</p></li>
+<li><p><a href="http://tools.ietf.org/html/rfc2616#section-4">RFC 2616 for HTTP 1.1</a> says that there should be a first line in an HTTP message, specifying that the message is a Response.  This standard is not enforced by Apache and therefore is similarly not enforced by this Apache-compatible Python Web Server.</p></li>
+<li><p>The same <a href="http://tools.ietf.org/html/rfc2616#section-14.17">RFC 2616 for HTTP 1.1</a> specifies the Content-Type header</p></li>
+<li><p><a href="http://docs.python.org/2/library/cgi.html#cgi.parse_header">The Python docs</a> specify the use of the <code>email.header</code> package for parsing the MIME headers that are used in HTTP messages</p></li>
+</ul>
+</body>
+</html>
