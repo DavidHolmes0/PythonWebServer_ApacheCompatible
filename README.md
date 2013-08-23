@@ -1,7 +1,7 @@
 Apache-compatible Python Web Server ("ACPWS")
-===========================================
+=============================================
 
-A version of Peter's PythonWebServer ("PWS") that behaves more like Apache.
+A version of Peter Brook's PythonWebServer ("PWS") that behaves more like Apache.
 
 security warnings
 -----------------
@@ -59,9 +59,21 @@ testing
 -------
 Preliminary testing has been done...
 + on Windows&nbsp;7, with Python 2.7.3 and 4 browsers (Internet Explorer v10, Chrome, Firefox, Safari) 
++ on Windows&nbsp;8, with Python 2.7.5 and the same 4 browsers 
 + on Mac OS&nbsp;X, with Python 2.7.5 and 3 browsers (Chrome, Firefox, Safari)
+
+The test_get.py cgi script has been modified from the form used in Peter Brooks's PWS, so that it now accesses the values past to it from test_post.html using `FieldStorage.getfirst()`, rather than indexing FieldStorage like a dictionary whose keys are field names.  This is unfortunate because students have been taught to use the dictionary-like syntax.  But test_get.py would intermittently fail because the object returned by FieldStorage had a list of buttons, rather than a single button.  A sample traceback from cgitb [appears here] (www.davidmholmes.net/Stuy/PythonWebServer/buttonListError.htm).  The failure would cease to reproduce, making it difficult to investigate.  The cause might be in the ACPWS, in FieldStorage, or even in the data sent by browsers.  The divergence from the syntax taught is unfortunate, but perhaps the course should switch to the more modern `FieldStorage.getfirst()` for the reasons discussed in the [Python docs] (http://docs.python.org/2/library/cgi.html#higher-level-interface).
+
 More testing and bug reports are welcome.
     
+known issues
+------------
+Internet Explorer 10 has a few issues.  The worst is that it intermittently fails to complete communication with the server.  The server issues no messages and makes no response to `control+C`, while the browser's tab says "Waiting for localhost".  The wait is sometimes a few minutes, but sometimes is more than 15 (and possibly indefinite; tests have been terminated).  The server can be unlocked by closing the browser (not just the tab).  This issue has not been seen in Chrome, Safari, or Firefox. 
+
+A minor issues with Internet Explorer issue keeps the user from browsing to the standard loopback address 127.0.0.1, because IE interprets the periods in an unexpected way.  The workaround for this second problem is to browse to `http://localhost:9000`.
+
+For these reasons, using Internet Explorer with ACPWS is deprecated. 
+
 references on content-type headers
 ----------------------------------
 + [Apache's rules for CGI][] say "The first thing... written by your program should be a set of HTTP headers, including the Content-Type, followed by a blank line."
